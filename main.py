@@ -19,8 +19,7 @@ CHAT_ID = os.getenv("CHAT_ID")
 EVENT_URLS = [
     "https://www.ticketmaster.com.br/event/pre-venda-army-membership-bts-world-tour-arirang-28-10",
     "https://www.ticketmaster.com.br/event/pre-venda-army-membership-bts-world-tour-arirang-30-10",
-    "https://www.ticketmaster.com.br/event/pre-venda-army-membership-bts-world-tour-arirang-31-10",
-    "https://www.ticketmaster.com.br/event/the-weeknd-after-hours-til-dawn-venda-geral-30-04-sao-paulo"
+    "https://www.ticketmaster.com.br/event/pre-venda-army-membership-bts-world-tour-arirang-31-10"
 ]
 
 CHECK_INTERVAL = 15
