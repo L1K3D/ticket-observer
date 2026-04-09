@@ -144,6 +144,7 @@ def rodar_servidor():
 # ================= MAIN =================
 if __name__ == "__main__":
     print("🚀 Iniciando bot...")
+    enviar_telegram("🚀 Bot de monitoramento iniciado!")
 
     t = threading.Thread(target=iniciar_bot)
     t.daemon = True
