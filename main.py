@@ -1,102 +1,132 @@
 import time
 import requests
-from bs4 import BeautifulSoup
+import os
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-import os
 
-# Configurações do bot
+# ================= CONFIG =================
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHAT_ID = os.environ.get("CHAT_ID")
 
-# Links dos eventos BTS
 EVENT_URLS = [
     "https://www.ticketmaster.com.br/event/pre-venda-army-membership-bts-world-tour-arirang-28-10",
     "https://www.ticketmaster.com.br/event/pre-venda-army-membership-bts-world-tour-arirang-30-10",
     "https://www.ticketmaster.com.br/event/pre-venda-army-membership-bts-world-tour-arirang-31-10"
 ]
 
+CHECK_INTERVAL = 10
+LOG_INTERVAL = 10
+REPORT_INTERVAL = 50
+
 contador = 0
-status_ingressos = {}
+status_anterior = {}
 
-def enviar_telegram(mensagem):
-    """Envia mensagem para o Telegram"""
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    payload = {"chat_id": CHAT_ID, "text": mensagem}
-    requests.post(url, data=payload)
+# ================= TELEGRAM =================
+def enviar_telegram(msg):
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        requests.post(url, data={"chat_id": CHAT_ID, "text": msg}, timeout=10)
+    except Exception as e:
+        print(f"Erro Telegram: {e}")
 
+# ================= DRIVER =================
+def criar_driver():
+    options = Options()
+    options.add_argument("--headless=new")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+
+    options.add_argument("--window-size=1920,1080")
+    options.add_argument("--lang=pt-BR")
+
+    options.add_argument(
+        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
+    )
+
+    return webdriver.Chrome(options=options)
+
+# ================= CORE =================
 def checar_ingressos(driver):
-    """Verifica status dos ingressos em todas as páginas"""
-    global contador, status_ingressos
+    global contador, status_anterior
+
+    status_atual = {}
+    print(f"\n🔎 Verificação #{contador + 1}")
 
     for url in EVENT_URLS:
-        driver.get(url)
-
         try:
-            # espera até que os blocos de ingresso apareçam
-            blocos = WebDriverWait(driver, 20).until(
-                EC.presence_of_all_elements_located((By.CSS_SELECTOR, "#rates .item-rate"))
-            )
-        except:
-            print("⚠️ Nenhum ingresso encontrado nessa página ainda.")
-            # Mesmo sem blocos, verificar se está esgotado
-            if "ESGOTADO" in driver.page_source:
-                status_ingressos["Pré-venda Army Membership"] = "ESGOTADO"
-            else:
-                status_ingressos["Pré-venda Army Membership"] = "INDISPONÍVEL"
-            # Não continua, para permitir o log
+            driver.get(url)
+            time.sleep(5)  # IMPORTANTE: dar tempo do JS carregar
 
-        # Processa os blocos se encontrados
-        if 'blocos' in locals() and blocos:
+            blocos = driver.find_elements(By.CSS_SELECTOR, "#rates .item-rate")
+
+            print(f"URL: {url} | Blocos encontrados: {len(blocos)}")
+
+            # Se não houver blocos
+            if len(blocos) == 0:
+                if "ESGOTADO" in driver.page_source.upper():
+                    status_atual[url] = "ESGOTADO"
+                else:
+                    status_atual[url] = "INDISPONÍVEL"
+                continue
+
             for bloco in blocos:
                 try:
-                    nome_elem = bloco.find_element(By.TAG_NAME, "h5")
-                    nome = nome_elem.text.strip()
+                    nome = bloco.find_element(By.TAG_NAME, "h5").text.strip()
                 except:
                     nome = "Ingresso desconhecido"
 
-                # tenta achar o span de esgotado
+                key = f"{url} | {nome}"
+
+                # Status
                 try:
                     bloco.find_element(By.CLASS_NAME, "sold-out")
                     status = "ESGOTADO"
                 except:
                     status = "DISPONÍVEL"
-                    enviar_telegram(f"🎟 Ingresso disponível: {nome}\n{url}")
 
-                status_ingressos[nome] = status
+                status_atual[key] = status
+
+                print(f"→ {nome}: {status}")
+
+                # 🔔 ALERTA REAL
+                if status == "DISPONÍVEL" and status_anterior.get(key) != "DISPONÍVEL":
+                    print("🚨 MUDOU PRA DISPONÍVEL!")
+                    enviar_telegram(f"🎟 DISPONÍVEL:\n{nome}\n{url}")
+
+        except Exception as e:
+            print(f"Erro ao acessar {url}: {e}")
 
     contador += 1
 
-    # Log no console a cada 10 verificações
-    if contador % 10 == 0:
-        print(f"\n===== LOG {contador} verificações =====")
-        for ingresso, status in status_ingressos.items():
-            print(f"- {ingresso}: {status}")
-        print("=====================================\n")
+    # Atualiza estado depois de tudo
+    status_anterior = status_atual.copy()
 
-    # Relatório no Telegram a cada 100 verificações
-    if contador % 100 == 0:
-        relatorio = f"📊 Relatório de {contador} verificações:\n"
-        for ingresso, status in status_ingressos.items():
-            relatorio += f"- {ingresso}: {status}\n"
+    # ================= LOG =================
+    if contador % LOG_INTERVAL == 0:
+        print(f"\n===== LOG {contador} =====")
+        for k, v in status_atual.items():
+            print(f"{k} → {v}")
+        print("=========================\n")
+
+    # ================= RELATÓRIO =================
+    if contador % REPORT_INTERVAL == 0:
+        print("📤 Enviando relatório pro Telegram...")
+
+        relatorio = f"📊 Relatório ({contador} verificações):\n"
+        for k, v in status_atual.items():
+            relatorio += f"{k} → {v}\n"
+
         enviar_telegram(relatorio)
 
+# ================= MAIN =================
 if __name__ == "__main__":
-    # Configurações do Chrome headless (ideal pro Render)
-    options = Options()
-    options.add_argument("--headless")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-
-    driver = webdriver.Chrome(options=options)
+    driver = criar_driver()
 
     try:
         while True:
             checar_ingressos(driver)
-            time.sleep(1)  # intervalo entre verificações
+            time.sleep(CHECK_INTERVAL)
     finally:
         driver.quit()
