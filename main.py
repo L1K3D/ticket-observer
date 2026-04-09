@@ -1,9 +1,13 @@
 import time
 import requests
 import os
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service
 
 # ================= CONFIG =================
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
@@ -17,7 +21,7 @@ EVENT_URLS = [
 
 CHECK_INTERVAL = 10
 LOG_INTERVAL = 10
-REPORT_INTERVAL = 50
+REPORT_INTERVAL = 100
 
 contador = 0
 status_anterior = {}
@@ -41,11 +45,12 @@ def criar_driver():
     options.add_argument("--window-size=1920,1080")
     options.add_argument("--lang=pt-BR")
 
-    options.add_argument(
-        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
-    )
+    options.binary_location = "/usr/bin/chromium"
 
-    return webdriver.Chrome(options=options)
+    service = Service("/usr/bin/chromedriver")
+
+    driver = webdriver.Chrome(service=service, options=options)
+    return driver
 
 # ================= CORE =================
 def checar_ingressos(driver):
@@ -57,13 +62,11 @@ def checar_ingressos(driver):
     for url in EVENT_URLS:
         try:
             driver.get(url)
-            time.sleep(5)  # IMPORTANTE: dar tempo do JS carregar
+            time.sleep(5)
 
             blocos = driver.find_elements(By.CSS_SELECTOR, "#rates .item-rate")
+            print(f"URL: {url} | Blocos: {len(blocos)}")
 
-            print(f"URL: {url} | Blocos encontrados: {len(blocos)}")
-
-            # Se não houver blocos
             if len(blocos) == 0:
                 if "ESGOTADO" in driver.page_source.upper():
                     status_atual[url] = "ESGOTADO"
@@ -79,7 +82,6 @@ def checar_ingressos(driver):
 
                 key = f"{url} | {nome}"
 
-                # Status
                 try:
                     bloco.find_element(By.CLASS_NAME, "sold-out")
                     status = "ESGOTADO"
@@ -87,46 +89,63 @@ def checar_ingressos(driver):
                     status = "DISPONÍVEL"
 
                 status_atual[key] = status
-
                 print(f"→ {nome}: {status}")
 
-                # 🔔 ALERTA REAL
                 if status == "DISPONÍVEL" and status_anterior.get(key) != "DISPONÍVEL":
-                    print("🚨 MUDOU PRA DISPONÍVEL!")
+                    print("🚨 DISPONÍVEL!")
                     enviar_telegram(f"🎟 DISPONÍVEL:\n{nome}\n{url}")
 
         except Exception as e:
             print(f"Erro ao acessar {url}: {e}")
 
     contador += 1
-
-    # Atualiza estado depois de tudo
     status_anterior = status_atual.copy()
 
-    # ================= LOG =================
+    # LOG
     if contador % LOG_INTERVAL == 0:
         print(f"\n===== LOG {contador} =====")
         for k, v in status_atual.items():
             print(f"{k} → {v}")
         print("=========================\n")
 
-    # ================= RELATÓRIO =================
+    # RELATÓRIO
     if contador % REPORT_INTERVAL == 0:
-        print("📤 Enviando relatório pro Telegram...")
-
+        print("📤 Enviando relatório...")
         relatorio = f"📊 Relatório ({contador} verificações):\n"
         for k, v in status_atual.items():
             relatorio += f"{k} → {v}\n"
-
         enviar_telegram(relatorio)
+
+# ================= BOT THREAD =================
+def iniciar_bot():
+    driver = criar_driver()
+
+    while True:
+        try:
+            checar_ingressos(driver)
+        except Exception as e:
+            print(f"Erro geral: {e}")
+        time.sleep(CHECK_INTERVAL)
+
+# ================= HTTP SERVER =================
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK")
+
+def rodar_servidor():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(("0.0.0.0", port), Handler)
+    print(f"🌐 Servidor rodando na porta {port}")
+    server.serve_forever()
 
 # ================= MAIN =================
 if __name__ == "__main__":
-    driver = criar_driver()
+    print("🚀 Iniciando bot...")
 
-    try:
-        while True:
-            checar_ingressos(driver)
-            time.sleep(CHECK_INTERVAL)
-    finally:
-        driver.quit()
+    t = threading.Thread(target=iniciar_bot)
+    t.daemon = True
+    t.start()
+
+    rodar_servidor()
