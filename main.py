@@ -37,6 +37,7 @@ def enviar_telegram(msg):
 # ================= DRIVER =================
 def criar_driver():
     options = Options()
+
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
