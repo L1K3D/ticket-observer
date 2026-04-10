@@ -6,6 +6,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 import platform
 import logging
 import re
+from dotenv import load_dotenv
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -13,13 +14,17 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
 
 # ================= CONFIG =================
+load_dotenv(r'configs_scripts/credentials.env')
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
 EVENT_URLS = [
     "https://www.ticketmaster.com.br/event/pre-venda-army-membership-bts-world-tour-arirang-28-10",
     "https://www.ticketmaster.com.br/event/pre-venda-army-membership-bts-world-tour-arirang-30-10",
-    "https://www.ticketmaster.com.br/event/pre-venda-army-membership-bts-world-tour-arirang-31-10"
+    "https://www.ticketmaster.com.br/event/pre-venda-army-membership-bts-world-tour-arirang-31-10",
+    "https://www.ticketmaster.com.br/event/venda-geral-bts-world-tour-arirang-28-10",
+    "https://www.ticketmaster.com.br/event/venda-geral-bts-world-tour-arirang-30-10",
+    "https://www.ticketmaster.com.br/event/venda-geral-bts-world-tour-arirang-31-10"
 ]
 
 CHECK_INTERVAL = 15
